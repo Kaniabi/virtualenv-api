@@ -202,6 +202,8 @@ class VirtualEnvironment(object):
             package = '=='.join(package)
         if package.startswith('-e'):
             package_args = package.split()
+        elif package.startswith('-r'):
+            package_args = package.split()
         else:
             package_args = [package]
         if not (force or upgrade) and self.is_installed(package_args[-1]):
@@ -216,7 +218,7 @@ class VirtualEnvironment(object):
         elif force:
             options += ['--ignore-installed']
         try:
-            self._execute_pip(['install'] + package_args + options)
+            return self._execute_pip(['install'] + package_args + options)
         except subprocess.CalledProcessError as e:
             raise PackageInstallationException((e.returncode, e.output, package))
 
@@ -229,7 +231,7 @@ class VirtualEnvironment(object):
             self._write_to_log('%s is not installed, skipping' % package)
             return
         try:
-            self._execute_pip(['uninstall', '-y', package])
+            return self._execute_pip(['uninstall', '-y', package])
         except subprocess.CalledProcessError as e:
             raise PackageRemovalException((e.returncode, e.output, package))
 
@@ -255,7 +257,7 @@ class VirtualEnvironment(object):
         if not isinstance(options, list):
             raise ValueError("Options must be a list of strings.")
         try:
-            self._execute_pip(['wheel', package] + options)
+            return self._execute_pip(['wheel', package] + options)
         except subprocess.CalledProcessError as e:
             raise PackageWheelException((e.returncode, e.output, package))
 

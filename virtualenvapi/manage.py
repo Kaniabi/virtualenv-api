@@ -4,7 +4,7 @@ import subprocess
 import six
 import sys
 
-from virtualenvapi.util import split_package_name, to_text, get_env_path, to_ascii
+from virtualenvapi.util import split_package_name, to_text, get_env_path
 from virtualenvapi.exceptions import *
 
 
@@ -131,11 +131,11 @@ class VirtualEnvironment(object):
         output = ''
         error = ''
         try:
-            proc = subprocess.Popen(args, cwd=self.path, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            output, error = proc.communicate()
+            proc = subprocess.Popen(args, cwd=self.path, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            output, _error = proc.communicate()
             returncode = proc.returncode
             if returncode:
-                raise subprocess.CalledProcessError(returncode, proc, (output, error))
+                raise subprocess.CalledProcessError(returncode, proc, output)
             return to_text(output)
         except OSError as e:
             # raise a more meaningful error with the program name
@@ -143,10 +143,6 @@ class VirtualEnvironment(object):
             if prog[0] != os.sep:
                 prog = os.path.join(self.path, prog)
             raise OSError('%s: %s' % (prog, six.u(str(e))))
-        except subprocess.CalledProcessError as e:
-            output, error = e.output
-            e.output = output
-            raise e
         finally:
             if log:
                 try:
@@ -180,6 +176,13 @@ class VirtualEnvironment(object):
             self._create()
         self._ready = True
 
+    def force_create(self):
+        """Forces the creation of a new virtual environment, deleting any
+        existing virtual environment."""
+        import shutil
+        shutil.rmtree(self.name, ignore_errors=True)
+        self._create()
+
     def install(self, package, force=False, upgrade=False, options=None):
         """Installs the given package into this virtual environment, as
         specified in pip's package syntax or a tuple of ('name', 'ver'),
@@ -196,31 +199,47 @@ class VirtualEnvironment(object):
         pip."""
         if self.readonly:
             raise VirtualenvReadonlyException()
-        if options is None:
-            options = []
+
+        options = options or []
+        if not isinstance(options, list):
+            raise ValueError("Options must be a list of strings.")
         if isinstance(package, tuple):
             package = '=='.join(package)
         if package.startswith('-e'):
-            package_args = package.split()
-        elif package.startswith('-r'):
             package_args = package.split()
         else:
             package_args = [package]
         if not (force or upgrade) and self.is_installed(package_args[-1]):
             self._write_to_log('%s is already installed, skipping (use force=True to override)' % package_args[-1])
             return
-        if not isinstance(options, list):
-            raise ValueError("Options must be a list of strings.")
-        if upgrade:
-            options += ['--upgrade']
-            if force:
-                options += ['--force-reinstall']
-        elif force:
-            options += ['--ignore-installed']
+        options += self._pip_options(upgrade, force)
         try:
             return self._execute_pip(['install'] + package_args + options)
         except subprocess.CalledProcessError as e:
             raise PackageInstallationException((e.returncode, e.output, package))
+
+    def editable(self, uri, upgrade=False, force=False):
+        return self.install('-e {}'.format(uri), upgrade=upgrade, force=force)
+
+    def requirement(self, requirement, upgrade=False, force=False):
+        requirement = os.path.abspath(requirement)
+        package_args = ['-r', requirement]
+        options = self._pip_options(upgrade, force)
+        try:
+            return self._execute_pip(['install'] + package_args + options)
+        except subprocess.CalledProcessError as e:
+            raise RequirementInstallationException((e.returncode, e.output, requirement))
+
+    def _pip_options(self, upgrade, force):
+        result = []
+        if upgrade:
+            result += ['--upgrade']
+            if force:
+                result += ['--force-reinstall']
+        elif force:
+            result += ['--ignore-installed']
+        return result
+
 
     def uninstall(self, package):
         """Uninstalls the given package (given in pip's package syntax or a tuple of

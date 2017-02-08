@@ -3,14 +3,14 @@ from setuptools import find_packages, setup
 from virtualenvapi import __version__
 
 setup(
-    name='virtualenv-api',
+    name='zerotk.virtualenv-api',
     version=__version__,
     license='BSD',
     author='Sam Kingston and AUTHORS',
     author_email='sam@sjkwi.com.au',
     description='An API for virtualenv/pip',
     long_description=open('README.rst', 'r').read(),
-    url='https://github.com/sjkingo/virtualenv-api',
+    url='https://github.com/zerotk/virtualenv-api',
     install_requires=['six',
                       'virtualenv'
                       ],

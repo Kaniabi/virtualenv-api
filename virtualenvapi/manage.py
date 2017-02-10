@@ -95,13 +95,13 @@ class VirtualEnvironment(object):
             args = ['virtualenv', self.name]
         else:
             args = ['virtualenv', '-p', self.python, self.name]
-        proc = subprocess.Popen(args, cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        output, error = proc.communicate()
+        proc = subprocess.Popen(args, cwd=self.root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output, _error = proc.communicate()
         returncode = proc.returncode
         if returncode:
             raise VirtualenvCreationException((returncode, output, self.name))
         self._write_to_log(output, truncate=True)
-        self._write_to_error(error, truncate=True)
+        # self._write_to_error(_error, truncate=True)
 
     def _execute_pip(self, args, raw_pip=False, log=True):
         """
@@ -147,7 +147,7 @@ class VirtualEnvironment(object):
             if log:
                 try:
                     self._write_to_log(to_text(output))
-                    self._write_to_error(to_text(error))
+                    # self._write_to_error(to_text(error))
                 except NameError:
                     pass  # We tried
 
@@ -200,9 +200,7 @@ class VirtualEnvironment(object):
         if self.readonly:
             raise VirtualenvReadonlyException()
 
-        options = options or []
-        if not isinstance(options, list):
-            raise ValueError("Options must be a list of strings.")
+        options = self._pip_options(upgrade, force, options=options)
         if isinstance(package, tuple):
             package = '=='.join(package)
         if package.startswith('-e'):
@@ -212,26 +210,27 @@ class VirtualEnvironment(object):
         if not (force or upgrade) and self.is_installed(package_args[-1]):
             self._write_to_log('%s is already installed, skipping (use force=True to override)' % package_args[-1])
             return
-        options += self._pip_options(upgrade, force)
         try:
             return self._execute_pip(['install'] + package_args + options)
         except subprocess.CalledProcessError as e:
             raise PackageInstallationException((e.returncode, e.output, package))
 
-    def editable(self, uri, upgrade=False, force=False):
-        return self.install('-e {}'.format(uri), upgrade=upgrade, force=force)
+    def editable(self, uri, upgrade=False, force=False, options=None):
+        return self.install('-e {}'.format(uri), upgrade=upgrade, force=force, options=options)
 
-    def requirement(self, requirement, upgrade=False, force=False):
+    def requirement(self, requirement, upgrade=False, force=False, options=None):
+        options = self._pip_options(upgrade, force, options=options)
         requirement = os.path.abspath(requirement)
         package_args = ['-r', requirement]
-        options = self._pip_options(upgrade, force)
         try:
             return self._execute_pip(['install'] + package_args + options)
         except subprocess.CalledProcessError as e:
             raise RequirementInstallationException((e.returncode, e.output, requirement))
 
-    def _pip_options(self, upgrade, force):
-        result = []
+    def _pip_options(self, upgrade, force, options=None):
+        result = options or []
+        if not isinstance(result, list):
+            raise ValueError("Options must be a list of strings.")
         if upgrade:
             result += ['--upgrade']
             if force:
@@ -239,7 +238,6 @@ class VirtualEnvironment(object):
         elif force:
             result += ['--ignore-installed']
         return result
-
 
     def uninstall(self, package):
         """Uninstalls the given package (given in pip's package syntax or a tuple of
